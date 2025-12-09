@@ -45,7 +45,6 @@ class QuizRequest:
 
 class QuizGenerator:
     def __init__(self, model: str = "gpt-4o-mini") -> None:
-        self.client = OpenAI()
         self.model = model
 
     def build_prompt(self, request: QuizRequest) -> str:
@@ -59,9 +58,10 @@ class QuizGenerator:
             question_type=question_type,
         )
 
-    def generate(self, request: QuizRequest) -> Tuple[str, str]:
+    def generate(self, request: QuizRequest, api_key: str) -> Tuple[str, str]:
         prompt = self.build_prompt(request)
-        response = self.client.chat.completions.create(
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
@@ -93,6 +93,7 @@ class QuizApp:
         self.root.title("Classroom AI: Quiz Generator")
         self.generator = QuizGenerator()
 
+        self.api_key_var = StringVar()
         self.subject_var = StringVar()
         self.topic_var = StringVar()
         self.num_questions_var = StringVar(value="5")
@@ -107,19 +108,24 @@ class QuizApp:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
 
-        # Inputs
-        ttk.Label(main_frame, text="Subject").grid(column=0, row=0, sticky="W", pady=(0, 4))
-        ttk.Entry(main_frame, textvariable=self.subject_var, width=40).grid(
-            column=0, row=1, sticky="WE", pady=(0, 8)
+        ttk.Label(main_frame, text="OpenAI API Key").grid(column=0, row=0, sticky="W", pady=(0, 4))
+        ttk.Entry(main_frame, textvariable=self.api_key_var, width=40, show="*").grid(
+            column=0, row=1, sticky="WE", pady=(0, 12)
         )
 
-        ttk.Label(main_frame, text="Topic").grid(column=0, row=2, sticky="W", pady=(0, 4))
-        ttk.Entry(main_frame, textvariable=self.topic_var, width=40).grid(
+        # Inputs
+        ttk.Label(main_frame, text="Subject").grid(column=0, row=2, sticky="W", pady=(0, 4))
+        ttk.Entry(main_frame, textvariable=self.subject_var, width=40).grid(
             column=0, row=3, sticky="WE", pady=(0, 8)
         )
 
+        ttk.Label(main_frame, text="Topic").grid(column=0, row=4, sticky="W", pady=(0, 4))
+        ttk.Entry(main_frame, textvariable=self.topic_var, width=40).grid(
+            column=0, row=5, sticky="WE", pady=(0, 8)
+        )
+
         input_row = ttk.Frame(main_frame)
-        input_row.grid(column=0, row=4, sticky="WE", pady=(0, 8))
+        input_row.grid(column=0, row=6, sticky="WE", pady=(0, 8))
         input_row.columnconfigure(0, weight=1)
         input_row.columnconfigure(1, weight=1)
         input_row.columnconfigure(2, weight=1)
@@ -146,11 +152,11 @@ class QuizApp:
         ).grid(column=2, row=1, sticky="WE", padx=(6, 0))
 
         # Actions
-        self.status_label = ttk.Label(main_frame, text="Fill in the details and click Generate.")
-        self.status_label.grid(column=0, row=5, sticky="W", pady=(4, 8))
+        self.status_label = ttk.Label(main_frame, text="Enter your API key and quiz details to begin.")
+        self.status_label.grid(column=0, row=7, sticky="W", pady=(4, 8))
 
         button_row = ttk.Frame(main_frame)
-        button_row.grid(column=0, row=6, sticky="WE", pady=(0, 10))
+        button_row.grid(column=0, row=8, sticky="WE", pady=(0, 10))
         button_row.columnconfigure((0, 1), weight=1)
 
         self.generate_button = ttk.Button(button_row, text="Generate Quiz", command=self.generate_quiz)
@@ -161,18 +167,23 @@ class QuizApp:
         self.save_button.state(["disabled"])
 
         # Output areas
-        ttk.Label(main_frame, text="Quiz Preview").grid(column=0, row=7, sticky="W")
+        ttk.Label(main_frame, text="Quiz Preview").grid(column=0, row=9, sticky="W")
         self.quiz_text = ScrolledText(main_frame, height=12, wrap="word")
-        self.quiz_text.grid(column=0, row=8, sticky="NSEW", pady=(0, 10))
+        self.quiz_text.grid(column=0, row=10, sticky="NSEW", pady=(0, 10))
 
-        ttk.Label(main_frame, text="Answer Key Preview").grid(column=0, row=9, sticky="W")
+        ttk.Label(main_frame, text="Answer Key Preview").grid(column=0, row=11, sticky="W")
         self.answers_text = ScrolledText(main_frame, height=10, wrap="word")
-        self.answers_text.grid(column=0, row=10, sticky="NSEW")
+        self.answers_text.grid(column=0, row=12, sticky="NSEW")
 
-        main_frame.rowconfigure(8, weight=1)
         main_frame.rowconfigure(10, weight=1)
+        main_frame.rowconfigure(12, weight=1)
 
     def generate_quiz(self) -> None:
+        api_key = self.api_key_var.get().strip()
+        if not api_key:
+            messagebox.showerror("API key required", "Please paste your OpenAI API key to continue.")
+            return
+
         try:
             request = self._build_request()
         except ValueError as exc:
@@ -181,11 +192,11 @@ class QuizApp:
 
         self._set_loading_state(True)
         self.status_label.config(text="Generating quiz with OpenAI…")
-        self.root.after(50, lambda: self._run_generation(request))
+        self.root.after(50, lambda: self._run_generation(request, api_key))
 
-    def _run_generation(self, request: QuizRequest) -> None:
+    def _run_generation(self, request: QuizRequest, api_key: str) -> None:
         try:
-            quiz_section, answers_section = self.generator.generate(request)
+            quiz_section, answers_section = self.generator.generate(request, api_key)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Generation failed", f"Could not generate quiz: {exc}")
             self.status_label.config(text="Generation failed. Please try again.")
